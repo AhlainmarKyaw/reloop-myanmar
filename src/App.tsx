@@ -110,6 +110,10 @@ function demoAnalyzeItem(note: string): Analysis {
 }
 
 async function analyzeItem(image: string, note: string): Promise<{ analysis: Analysis; demoMode: boolean }> {
+  if (import.meta.env.DEV) {
+    await new Promise(resolve => setTimeout(resolve, 3800))
+    return { analysis: demoAnalyzeItem(note), demoMode: true }
+  }
   try {
     const response = await fetch('/api/analyze-item', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image, note }),
@@ -303,7 +307,7 @@ function SellPage() {
     {analysis && <div className="grid gap-6 lg:grid-cols-[1.15fr_.85fr]">
       <div className="space-y-6">
         <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-widest text-brand-600">AI item analysis</p><h2 className="mt-2 text-2xl font-extrabold">{analysis.itemName}</h2></div>{demoMode && <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700"><Zap size={14} /> Demo Mode</span>}</div>
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-widest text-brand-600">AI item analysis</p><h2 className="mt-2 text-2xl font-extrabold">{analysis.itemName}</h2></div>{demoMode && <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide text-amber-700 shadow-sm"><Zap size={15} fill="currentColor" /> Demo Mode · Fallback AI</span>}</div>
           <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">{[['Category', analysis.category], ['Condition', analysis.condition], ['Confidence', `${analysis.conditionConfidence}%`]].map(([label, value]) => <div key={label} className="rounded-2xl bg-stone-50 p-4"><p className="text-xs text-stone-500">{label}</p><p className="mt-1 font-bold">{value}</p></div>)}</div>
           <div className="mt-6 rounded-2xl border border-brand-200 bg-brand-50 p-5"><p className="text-sm font-semibold text-brand-700">Fair price estimate</p><p className="mt-2 text-2xl font-black tracking-tight text-brand-700">{formatMMK(analysis.suggestedPriceMin).replace(' MMK', '')} – {formatMMK(analysis.suggestedPriceMax)}</p><p className="mt-2 text-xs leading-relaxed text-brand-700/70">Based on item type, visible condition and prototype market assumptions. This is an estimate, not real-time market data.</p></div>
         </section>
