@@ -430,12 +430,12 @@ function DetailPage() {
   const [saved, setSaved] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [interestSent, setInterestSent] = useState(false)
+  const [interestForm, setInterestForm] = useState({ buyerName: '', contact: '', message: 'Hi, is this still available?' })
   const submitInterest = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
     void sendListingEvent({
       event: 'buyer_interest', listingId: listing?.id, listingTitle: listing?.title,
-      buyerName: form.get('buyerName'), contact: form.get('contact'), message: form.get('message'),
+      buyerName: interestForm.buyerName, contact: interestForm.contact, message: interestForm.message,
       createdAt: new Date().toISOString(),
     })
     setInterestSent(true)
@@ -464,9 +464,9 @@ function DetailPage() {
       {interestSent ? <div className="py-4 text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-brand-50 text-brand-600"><CircleCheck size={32} /></span><Dialog.Title className="mt-5 text-2xl font-black">Interest sent.</Dialog.Title><Dialog.Description className="mt-3 leading-relaxed text-stone-500">Your interest is saved for this prototype. No real message was sent.</Dialog.Description><Button onClick={() => setDialogOpen(false)} className="mt-7 w-full">Done</Button></div> :
         <><Dialog.Title className="pr-10 text-2xl font-black">Interested in this item?</Dialog.Title><Dialog.Description className="mt-2 text-sm leading-relaxed text-stone-500">Share a simple way for the seller to respond. This stays local in the prototype.</Dialog.Description>
           <form onSubmit={submitInterest} className="mt-6 space-y-4">
-            <label className="block text-sm font-bold">Your name<input name="buyerName" required autoFocus placeholder="Aye Aye" className="mt-2 w-full rounded-xl border border-stone-200 p-3 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /></label>
-            <label className="block text-sm font-bold">Contact method<input name="contact" required placeholder="Phone, Viber, or email" className="mt-2 w-full rounded-xl border border-stone-200 p-3 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /></label>
-            <label className="block text-sm font-bold">Message<textarea name="message" required defaultValue="Hi, is this still available?" rows={3} className="mt-2 w-full resize-none rounded-xl border border-stone-200 p-3 font-normal outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /></label>
+            <label className="block text-sm font-bold">Your name<input name="buyerName" required autoFocus value={interestForm.buyerName} onChange={event => setInterestForm(current => ({ ...current, buyerName: event.target.value }))} placeholder="Aye Aye" className="mt-2 w-full rounded-xl border border-stone-200 p-3 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /></label>
+            <label className="block text-sm font-bold">Contact method<input name="contact" required value={interestForm.contact} onChange={event => setInterestForm(current => ({ ...current, contact: event.target.value }))} placeholder="09 123 456 789 or email" className="mt-2 w-full rounded-xl border border-stone-200 p-3 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /></label>
+            <label className="block text-sm font-bold">Message<textarea name="message" required value={interestForm.message} onChange={event => setInterestForm(current => ({ ...current, message: event.target.value }))} rows={3} className="mt-2 w-full resize-none rounded-xl border border-stone-200 p-3 font-normal outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /></label>
             <Button type="submit" className="w-full py-3.5">Send interest <ArrowRight size={17} /></Button>
           </form>
         </>}
