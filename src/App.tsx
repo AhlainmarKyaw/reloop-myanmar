@@ -11,11 +11,12 @@ import {
 type Analysis = {
   itemName: string; category: string; condition: string; conditionConfidence: number
   suggestedPriceMin: number; suggestedPriceMax: number; title: string; description: string
-  trustObservations: string[]; environmentalImpact: string; estimatedWasteAvoidedKg: number
+  trustObservations: string[]; buyerChecks?: string[]; environmentalImpact: string; estimatedWasteAvoidedKg: number
 }
 type Listing = Analysis & {
   id: string; price: number; location: string; seller: string; sellerSince: string
-  trustScore: number; aiVerified: boolean; image?: string; icon?: string; color?: string; publishedAt?: string
+  trustScore: number; aiVerified: boolean; image?: string; icon?: string; color?: string
+  publishedAt?: string; sellerNote?: string
 }
 
 const demoListings: Listing[] = [
@@ -83,6 +84,27 @@ const demoListings: Listing[] = [
 
 const storageKey = 'reloop-myanmar-listings'
 const formatMMK = (value: number) => `${new Intl.NumberFormat('en-US').format(value)} MMK`
+const defaultBuyerChecks = ['Confirm functionality before purchase', 'Verify included accessories', 'Inspect the item before payment']
+const estimateWasteKg = (category: string) => {
+  const value = category.toLowerCase()
+  if (/phone|tablet/.test(value)) return 0.4
+  if (/computer|laptop/.test(value)) return 2.1
+  if (/audio|headphone/.test(value)) return 0.25
+  if (/furniture|chair/.test(value)) return 12.5
+  if (/bike|bicycle|sport/.test(value)) return 14.2
+  if (/appliance|cooker/.test(value)) return 3.4
+  if (/cloth|fashion/.test(value)) return 0.5
+  if (/book/.test(value)) return 0.6
+  return 1
+}
+const calculateTrustScore = (input: { image: boolean; analysis: boolean; description: boolean; sellerNote: boolean; conditionConfidence: number }) =>
+  Math.min(100,
+    (input.image ? 30 : 0) +
+    (input.analysis ? 25 : 0) +
+    (input.description ? 15 : 0) +
+    (input.sellerNote ? 10 : 0) +
+    Math.round(Math.max(0, Math.min(100, input.conditionConfidence)) * 0.2),
+  )
 const readPublished = (): Listing[] => {
   try { return JSON.parse(localStorage.getItem(storageKey) || '[]') }
   catch { return [] }
@@ -94,16 +116,18 @@ function demoAnalyzeItem(note: string): Analysis {
     conditionConfidence: 90, suggestedPriceMin: 220000, suggestedPriceMax: 280000,
     title: 'Reliable Urban Bicycle — Ready to Ride',
     description: 'Well-kept commuter bicycle with a sturdy frame and comfortable setup. A practical choice for everyday travel around the city. Light cosmetic wear is consistent with normal use.',
-    trustObservations: ['Frame appears straight with no obvious cracks', 'Tyres show usable tread', 'Test brakes and gears during an in-person meetup'],
+    trustObservations: ['Frame appears straight with no obvious exterior cracks', 'Tyres appear to show usable tread', 'Visible condition suggests normal cosmetic wear'],
+    buyerChecks: ['Test brakes and gears before purchase', 'Confirm the frame size is suitable', 'Inspect the item before payment'],
     environmentalImpact: 'Keeping this bicycle in use avoids material waste and supports low-carbon transport.',
     estimatedWasteAvoidedKg: 14.2,
   }
   return {
-    itemName: 'Apple iPhone 12', category: 'Phones & Tablets', condition: 'Very Good',
+    itemName: 'Smartphone (appears to be iPhone 12)', category: 'Phones & Tablets', condition: 'Very Good',
     conditionConfidence: 94, suggestedPriceMin: 610000, suggestedPriceMax: 680000,
     title: 'iPhone 12 128GB — Clean & Well Cared For',
-    description: 'Gently used iPhone 12 with 128GB storage in very good visible condition. The screen and camera lenses appear clean, with only light signs of everyday use. Ideal for anyone looking for a dependable upgrade at a fair second-hand price.',
-    trustObservations: ['Screen appears free of visible cracks', 'Camera lenses and buttons look intact', 'Confirm battery health, IMEI, and iCloud status before payment'],
+    description: 'The seller identifies this as an iPhone 12 with 128GB storage. Visible condition appears very good, with a clean screen and camera area in the provided image. Functionality and internal condition cannot be verified from a photo.',
+    trustObservations: ['No obvious exterior screen cracks are visible', 'Camera area appears intact in the provided image', 'Light signs of normal use may be present'],
+    buyerChecks: ['Test functionality and battery before purchase', 'Verify IMEI and iCloud status', 'Confirm the included box and cable'],
     environmentalImpact: 'Giving this phone a second life can keep valuable electronics in circulation and reduce demand for a newly manufactured device.',
     estimatedWasteAvoidedKg: 0.4,
   }
@@ -111,18 +135,40 @@ function demoAnalyzeItem(note: string): Analysis {
 
 async function analyzeItem(image: string, note: string): Promise<{ analysis: Analysis; demoMode: boolean }> {
   if (import.meta.env.DEV) {
-    await new Promise(resolve => setTimeout(resolve, 3800))
+    await new Promise(resolve => setTimeout(resolve, 2200))
     return { analysis: demoAnalyzeItem(note), demoMode: true }
   }
   try {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 12000)
     const response = await fetch('/api/analyze-item', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image, note }),
+      signal: controller.signal,
     })
+    clearTimeout(timeout)
     if (!response.ok) throw new Error('AI endpoint unavailable')
-    return { analysis: await response.json(), demoMode: false }
+    const value = await response.json() as Partial<Analysis>
+    if (!value.itemName || !value.category || !value.condition || !value.title || !value.description ||
+      !Array.isArray(value.trustObservations) || !Array.isArray(value.buyerChecks) ||
+      !Number.isFinite(value.suggestedPriceMin) || !Number.isFinite(value.suggestedPriceMax)) throw new Error('Invalid AI response')
+    const analysis = value as Analysis
+    analysis.conditionConfidence = Math.max(0, Math.min(100, Number(analysis.conditionConfidence) || 0))
+    analysis.estimatedWasteAvoidedKg = estimateWasteKg(analysis.category)
+    return { analysis, demoMode: false }
   } catch {
-    await new Promise(resolve => setTimeout(resolve, 3800))
+    await new Promise(resolve => setTimeout(resolve, 1200))
     return { analysis: demoAnalyzeItem(note), demoMode: true }
+  }
+}
+
+async function sendListingEvent(payload: Record<string, unknown>) {
+  if (import.meta.env.DEV) return
+  try {
+    await fetch('/api/listing-event', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    })
+  } catch {
+    // Optional automation must never block the core marketplace flow.
   }
 }
 function cn(...values: Array<string | false | undefined>) { return values.filter(Boolean).join(' ') }
@@ -191,7 +237,7 @@ function ListingCard({ listing }: { listing: Listing }) {
     <div className="relative aspect-[4/3] overflow-hidden">
       <ItemVisual listing={listing} className="transition duration-500 group-hover:scale-105" />
       <button aria-label="Save listing" onClick={event => { event.preventDefault(); event.currentTarget.classList.toggle('text-rose-500') }} className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-stone-600 shadow-sm backdrop-blur transition hover:scale-105"><Heart size={17} /></button>
-      {listing.aiVerified && <span className="absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold text-brand-700 shadow-sm backdrop-blur"><BadgeCheck size={14} /> AI VERIFIED</span>}
+      {listing.aiVerified && <span className="absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold text-brand-700 shadow-sm backdrop-blur"><BadgeCheck size={14} /> AI ASSESSED</span>}
     </div>
     <div className="p-4">
       <div className="mb-2 flex items-center justify-between gap-3 text-xs"><span className="rounded-md bg-brand-50 px-2 py-1 font-semibold text-brand-700">{listing.condition}</span><span className="flex items-center gap-1 text-stone-500"><MapPin size={13} /> {listing.location}</span></div>
@@ -203,9 +249,12 @@ function ListingCard({ listing }: { listing: Listing }) {
 }
 
 function HomePage() {
-  const query = (new URLSearchParams(useLocation().search).get('q') || '').toLowerCase()
+  const searchParams = new URLSearchParams(useLocation().search)
+  const query = (searchParams.get('q') || '').toLowerCase()
+  const publishedId = searchParams.get('published')
   const allListings = useMemo(() => [...readPublished(), ...demoListings], [])
   const filtered = allListings.filter(item => !query || `${item.title} ${item.category} ${item.location}`.toLowerCase().includes(query))
+  const totalWaste = allListings.reduce((sum, listing) => sum + listing.estimatedWasteAvoidedKg, 0)
   const categories = [['Phones', Smartphone], ['Computers', Laptop], ['Home', Coffee], ['Sports', Bike]] as const
   return <main>
     <section className="relative overflow-hidden border-b border-stone-200 bg-[#f4faf6]">
@@ -214,23 +263,27 @@ function HomePage() {
         <div>
           <span className="mb-6 inline-flex items-center gap-2 rounded-full border border-brand-200 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-brand-700"><Sparkles size={14} /> Smarter resale for Myanmar</span>
           <h1 className="max-w-3xl text-5xl font-black leading-[1.04] tracking-[-.045em] text-ink sm:text-6xl lg:text-7xl">Give Things a <span className="text-brand-600">Second Life.</span></h1>
-          <p className="mt-6 max-w-xl text-lg leading-relaxed text-stone-600 sm:text-xl">AI-powered second-hand marketplace built for Myanmar. List confidently, price fairly, and make every item count.</p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row"><Link to="/sell"><Button className="w-full px-7 py-4 text-base sm:w-auto"><WandSparkles size={20} /> Sell an Item with AI <ArrowRight size={18} /></Button></Link><a href="#marketplace"><Button variant="secondary" className="w-full py-4 text-base sm:w-auto">Browse marketplace</Button></a></div>
+          <p className="mt-6 max-w-xl text-lg leading-relaxed text-stone-600 sm:text-xl">Turn one photo into a trusted second-hand listing in seconds.</p>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row"><Link to="/sell"><Button className="w-full px-7 py-4 text-base sm:w-auto"><WandSparkles size={20} /> Sell with AI <ArrowRight size={18} /></Button></Link><a href="#marketplace"><Button variant="secondary" className="w-full py-4 text-base sm:w-auto">Browse Items</Button></a></div>
           <p className="mt-4 flex items-center gap-2 text-xs text-stone-500"><CircleCheck size={14} className="text-brand-600" /> Free to list · AI guidance in seconds</p>
         </div>
         <div className="relative hidden h-[430px] lg:block">
           <div className="animate-float absolute left-12 top-4 h-72 w-56 rotate-[-6deg] overflow-hidden rounded-[2rem] border-8 border-white bg-white shadow-2xl"><ItemVisual listing={demoListings[0]} /><div className="absolute bottom-0 w-full bg-white p-4"><p className="text-xs text-stone-500">AI price estimate</p><p className="font-bold">610K – 680K MMK</p></div></div>
           <div className="absolute bottom-3 right-8 h-72 w-64 rotate-[7deg] overflow-hidden rounded-[2rem] border-8 border-white bg-white shadow-2xl"><ItemVisual listing={demoListings[4]} /><div className="absolute bottom-0 w-full bg-white p-4"><p className="font-bold">Ready for a second life</p><p className="mt-1 text-xs text-stone-500">14.2 kg waste avoided</p></div></div>
-          <div className="absolute right-4 top-4 rounded-2xl bg-white p-4 shadow-xl"><BadgeCheck className="text-brand-600" /><p className="mt-2 text-sm font-bold">AI verified</p></div>
+          <div className="absolute right-4 top-4 rounded-2xl bg-white p-4 shadow-xl"><BadgeCheck className="text-brand-600" /><p className="mt-2 text-sm font-bold">AI assessed</p></div>
         </div>
       </div>
     </section>
     <section id="impact" className="border-b border-stone-200 bg-white"><div className="mx-auto grid max-w-7xl grid-cols-1 divide-y divide-stone-200 px-5 sm:grid-cols-3 sm:divide-x sm:divide-y-0 sm:px-8">
-      {[['2,840+', 'Items reused', PackageCheck], ['18.6 tonnes', 'Estimated waste avoided', Recycle], ['42.3 tonnes', 'Estimated CO₂ impact', Leaf]].map(([value, label, Icon]) =>
+      {[[String(allListings.length), 'Items given a second life', PackageCheck], [`${totalWaste.toFixed(1)} kg`, 'Estimated waste avoided', Recycle], ['PHOTO → AI → TRUST → REUSE', 'The ReLoop journey', Leaf]].map(([value, label, Icon]) =>
         <div key={String(label)} className="flex items-center gap-4 px-4 py-7 sm:justify-center"><span className="grid h-11 w-11 place-items-center rounded-xl bg-brand-50 text-brand-700"><Icon size={21} /></span><div><p className="text-xl font-extrabold">{String(value)}</p><p className="text-xs text-stone-500">{String(label)}*</p></div></div>)}
     </div></section>
     <section id="categories" className="mx-auto max-w-7xl px-5 pt-16 sm:px-8"><div className="flex gap-3 overflow-auto pb-2">{categories.map(([name, Icon]) => <a key={name} href={`/?q=${name}`} className="flex min-w-36 items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-semibold shadow-sm transition hover:border-brand-300 hover:text-brand-700"><Icon size={19} className="text-brand-600" /> {name}</a>)}</div></section>
+    <section className="mx-auto grid max-w-7xl gap-4 px-5 pt-14 sm:grid-cols-3 sm:px-8">
+      {[[Zap, 'Sell faster', 'AI handles identification, pricing, and writing.'], [ShieldCheck, 'Buy with confidence', 'Visible observations and practical buyer checks.'], [Leaf, 'Reduce waste', 'See the estimated benefit of keeping items in use.']].map(([Icon, title, copy]) => <div key={String(title)} className="flex gap-4 rounded-2xl border border-stone-200 bg-white p-5"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700"><Icon size={19} /></span><div><h3 className="font-bold">{String(title)}</h3><p className="mt-1 text-sm leading-relaxed text-stone-500">{String(copy)}</p></div></div>)}
+    </section>
     <section id="marketplace" className="mx-auto max-w-7xl px-5 py-14 sm:px-8 sm:py-20">
+      {publishedId && <div className="mb-8 flex flex-col gap-4 rounded-2xl border border-brand-200 bg-brand-50 p-5 text-brand-800 sm:flex-row sm:items-center"><CircleCheck size={24} className="shrink-0" /><div className="flex-1"><p className="font-bold">Your listing is live.</p><p className="text-sm opacity-75">It is now at the top of the marketplace.</p></div><Link to={`/listing/${publishedId}`}><Button className="w-full sm:w-auto">Open listing <ArrowRight size={16} /></Button></Link></div>}
       <div className="mb-8 flex items-end justify-between gap-4"><div><p className="text-sm font-bold uppercase tracking-widest text-brand-600">Fresh finds</p><h2 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">{query ? `Results for “${query}”` : 'Discover your next find'}</h2></div><Button variant="secondary" className="hidden sm:flex"><SlidersHorizontal size={16} /> Filter <ChevronDown size={15} /></Button></div>
       {filtered.length ? <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">{filtered.map(listing => <ListingCard key={listing.id} listing={listing} />)}</div> :
         <div className="rounded-3xl border border-dashed border-stone-300 bg-white py-20 text-center"><Search className="mx-auto text-stone-300" size={40} /><h3 className="mt-4 text-xl font-bold">No matching items yet</h3><p className="mt-2 text-stone-500">Try a broader search, or be the first to list one.</p><Link to="/sell"><Button className="mt-5">Sell with AI</Button></Link></div>}
@@ -239,11 +292,33 @@ function HomePage() {
   </main>
 }
 
-const analysisSteps = ['Identifying item…', 'Checking condition…', 'Estimating fair price…', 'Creating listing…', 'Calculating environmental impact…']
+const analysisSteps = ['Looking at your item…', 'Checking visible condition…', 'Preparing your listing…']
+
+function TrustPassport({ analysis, trustScore, sellerNoteProvided }: { analysis: Analysis; trustScore: number; sellerNoteProvided: boolean }) {
+  const signals = [
+    ['Image analyzed', true],
+    ['Visible condition reviewed', true],
+    ['Listing information completed', Boolean(analysis.title && analysis.description)],
+    ['Seller provided additional information', sellerNoteProvided],
+  ] as const
+  return <section className="overflow-hidden rounded-3xl border border-blue-200 bg-white shadow-sm">
+    <div className="bg-blue-50 p-6">
+      <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-extrabold uppercase tracking-[.16em] text-blue-700">AI Trust Passport</p><h3 className="mt-2 text-lg font-extrabold">AI-assisted assessment</h3></div><div className="text-right"><p className="text-3xl font-black text-blue-800">{trustScore}<span className="text-base text-blue-400"> / 100</span></p><p className="text-[11px] font-semibold text-blue-600">Trust signals</p></div></div>
+      <div className="mt-5 grid gap-2 sm:grid-cols-2">{signals.map(([label, active]) => <div key={label} className={cn('flex items-center gap-2 text-xs font-semibold', active ? 'text-blue-800' : 'text-stone-400')}><span className={cn('grid h-5 w-5 place-items-center rounded-full', active ? 'bg-blue-700 text-white' : 'bg-stone-200')}><Check size={12} /></span>{label}</div>)}</div>
+      <details className="mt-5 text-xs text-blue-700"><summary className="cursor-pointer font-bold focus:outline-none focus:ring-2 focus:ring-blue-300">How is this calculated?</summary><p className="mt-2 leading-relaxed text-blue-700/75">Image +30, AI analysis +25, completed description +15, seller note +10, and condition confidence up to +20. It does not guarantee honesty, authenticity, ownership, safety, or functionality.</p></details>
+    </div>
+    <div className="grid gap-6 p-6 sm:grid-cols-2">
+      <div><p className="text-sm font-extrabold">AI visible observations</p><ul className="mt-3 space-y-3">{analysis.trustObservations.map(item => <li key={item} className="flex gap-2 text-sm leading-relaxed text-stone-600"><CircleCheck size={16} className="mt-0.5 shrink-0 text-brand-600" />{item}</li>)}</ul></div>
+      <div><p className="text-sm font-extrabold">Buyer checks</p><ul className="mt-3 space-y-3">{(analysis.buyerChecks || defaultBuyerChecks).map(item => <li key={item} className="flex gap-2 text-sm leading-relaxed text-stone-600"><ShieldCheck size={16} className="mt-0.5 shrink-0 text-amber-600" />{item}</li>)}</ul></div>
+    </div>
+    <p className="border-t border-stone-100 px-6 py-3 text-[11px] text-stone-400">Buyer verification recommended. Assessment is based only on the provided image and seller note.</p>
+  </section>
+}
 
 function SellPage() {
   const navigate = useNavigate()
   const fileRef = useRef<HTMLInputElement>(null)
+  const analysisLock = useRef(false)
   const [image, setImage] = useState('')
   const [note, setNote] = useState('')
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -252,10 +327,11 @@ function SellPage() {
   const [demoMode, setDemoMode] = useState(false)
   const [price, setPrice] = useState(0)
   const [error, setError] = useState('')
+  const [isPublishing, setIsPublishing] = useState(false)
 
   useEffect(() => {
     if (!isAnalyzing) return
-    const timer = window.setInterval(() => setStep(current => Math.min(current + 1, analysisSteps.length - 1)), 720)
+    const timer = window.setInterval(() => setStep(current => Math.min(current + 1, analysisSteps.length - 1)), 650)
     return () => clearInterval(timer)
   }, [isAnalyzing])
   const handleFile = (file?: File) => {
@@ -266,20 +342,37 @@ function SellPage() {
     reader.onload = () => { setImage(String(reader.result)); setError(''); setAnalysis(null) }
     reader.readAsDataURL(file)
   }
+  const loadDemoItem = async () => {
+    const response = await fetch('/demo-phone.svg')
+    const blob = await response.blob()
+    handleFile(new File([blob], 'reloop-demo-phone.svg', { type: 'image/svg+xml' }))
+    setNote('Used for one year. Charger and original box included.')
+  }
   const runAnalysis = async () => {
-    if (!image) { setError('Add a photo so ReLoop AI can analyze your item.'); return }
+    if (!image || analysisLock.current) return
+    analysisLock.current = true
     setIsAnalyzing(true); setStep(0); setError('')
-    const result = await analyzeItem(image, note)
-    setAnalysis(result.analysis); setDemoMode(result.demoMode)
-    setPrice(Math.round(((result.analysis.suggestedPriceMin + result.analysis.suggestedPriceMax) / 2) / 5000) * 5000)
-    setIsAnalyzing(false)
+    try {
+      const result = await analyzeItem(image, note)
+      setAnalysis(result.analysis); setDemoMode(result.demoMode)
+      setPrice(Math.round(((result.analysis.suggestedPriceMin + result.analysis.suggestedPriceMax) / 2) / 5000) * 5000)
+    } catch {
+      setError('We could not analyze this image. Please try again.')
+    } finally {
+      setIsAnalyzing(false)
+      analysisLock.current = false
+    }
   }
   const publish = () => {
-    if (!analysis) return
+    if (!analysis || !image || !analysis.title.trim() || !analysis.description.trim() || price <= 0 || isPublishing) return
+    setIsPublishing(true)
     const id = `listing-${Date.now()}`
-    const listing: Listing = { ...analysis, id, price, image, location: 'Yangon', seller: 'You', sellerSince: 'New seller', trustScore: analysis.conditionConfidence, aiVerified: true, publishedAt: new Date().toISOString() }
+    const publishedAt = new Date().toISOString()
+    const trustScore = calculateTrustScore({ image: true, analysis: true, description: true, sellerNote: Boolean(note.trim()), conditionConfidence: analysis.conditionConfidence })
+    const listing: Listing = { ...analysis, estimatedWasteAvoidedKg: estimateWasteKg(analysis.category), id, price, image, location: 'Yangon', seller: 'You', sellerSince: 'New seller', sellerNote: note, trustScore, aiVerified: true, publishedAt }
     localStorage.setItem(storageKey, JSON.stringify([listing, ...readPublished()]))
-    navigate(`/listing/${id}`, { state: { justPublished: true } })
+    void sendListingEvent({ event: 'listing_published', listingId: id, title: listing.title, category: listing.category, price, location: listing.location, trustScore, estimatedWasteAvoidedKg: listing.estimatedWasteAvoidedKg, createdAt: publishedAt })
+    navigate(`/?published=${id}#marketplace`)
   }
 
   return <main className="min-h-[calc(100vh-72px)] bg-[#f7f8f6]"><div className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">
@@ -287,17 +380,18 @@ function SellPage() {
     <div className="mb-10 max-w-2xl"><div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-brand-600 text-white"><WandSparkles size={22} /></span><span className="font-bold text-brand-700">AI Sell Assistant</span></div><h1 className="mt-5 text-4xl font-black tracking-[-.035em] sm:text-5xl">{analysis ? 'Your listing, made smarter.' : 'Turn a photo into a great listing.'}</h1><p className="mt-4 text-stone-600">{analysis ? 'Review the AI suggestions, make any edits, and publish when you’re happy.' : 'Upload one clear photo. ReLoop AI helps identify, price, describe, and assess your item.'}</p></div>
     {!analysis && !isAnalyzing && <div className="grid gap-6 lg:grid-cols-[1.25fr_.75fr]">
       <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-7">
-        <div className="mb-5 flex items-center justify-between"><div><p className="font-bold">1. Add an item photo</p><p className="mt-1 text-sm text-stone-500">A clear, well-lit photo works best.</p></div><span className="rounded-full bg-stone-100 px-3 py-1 text-xs text-stone-500">JPG, PNG · max 4 MB</span></div>
-        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={event => handleFile(event.target.files?.[0])} />
+        <div className="mb-5 flex items-center justify-between"><div><p className="font-bold">1. Add one item photo</p><p className="mt-1 text-sm text-stone-500">A clear, well-lit photo works best.</p></div><span className="rounded-full bg-stone-100 px-3 py-1 text-xs text-stone-500">JPG, PNG, WEBP · max 4 MB</span></div>
+        <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={event => handleFile(event.target.files?.[0])} />
         {image ? <div className="group relative aspect-[16/10] overflow-hidden rounded-2xl bg-stone-100"><img src={image} alt="Item preview" className="h-full w-full object-contain" /><button onClick={() => setImage('')} className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white text-stone-700 shadow-lg"><X size={17} /></button></div> :
           <button onClick={() => fileRef.current?.click()} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); handleFile(event.dataTransfer.files[0]) }} className="group flex aspect-[16/10] w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-stone-300 bg-stone-50 transition hover:border-brand-400 hover:bg-brand-50/50"><span className="grid h-16 w-16 place-items-center rounded-2xl bg-white text-brand-600 shadow-md transition group-hover:-translate-y-1"><CloudUpload size={29} /></span><p className="mt-5 font-bold">Drop your photo here</p><p className="mt-1 text-sm text-stone-500">or click to browse</p></button>}
       </section>
       <aside className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-7">
         <p className="font-bold">2. Add a note <span className="font-normal text-stone-400">(optional)</span></p><p className="mt-1 text-sm text-stone-500">Details like model, age, or included accessories improve results.</p>
-        <textarea value={note} onChange={event => setNote(event.target.value)} rows={6} placeholder="Example: iPhone 12, 128GB, used for two years. Includes box and cable…" className="mt-5 w-full resize-none rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm leading-relaxed outline-none transition placeholder:text-stone-400 focus:border-brand-500 focus:bg-white focus:ring-4 focus:ring-brand-50" />
+        <textarea value={note} onChange={event => setNote(event.target.value)} rows={5} placeholder="Used for one year. Charger included." aria-label="Optional seller note" className="mt-5 w-full resize-none rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm leading-relaxed outline-none transition placeholder:text-stone-400 focus:border-brand-500 focus:bg-white focus:ring-4 focus:ring-brand-50" />
         <div className="mt-5 rounded-2xl bg-brand-50 p-4"><p className="flex items-center gap-2 text-sm font-bold text-brand-700"><ShieldCheck size={17} /> Your photo stays private</p><p className="mt-1 text-xs leading-relaxed text-brand-700/70">Used only to create this listing in the prototype.</p></div>
         {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
-        <Button onClick={runAnalysis} className="mt-5 w-full py-4 text-base"><Sparkles size={19} /> Analyze with AI</Button>
+        <Button onClick={runAnalysis} disabled={!image || isAnalyzing} className="mt-5 w-full py-4 text-base"><Sparkles size={19} /> Analyze with AI</Button>
+        <button onClick={loadDemoItem} className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-bold text-brand-700 hover:bg-brand-50"><Zap size={16} /> Try Demo Item</button>
       </aside>
     </div>}
     {isAnalyzing && <div className="mx-auto grid max-w-4xl items-center gap-9 rounded-3xl border border-stone-200 bg-white p-6 shadow-xl shadow-stone-200/40 sm:p-9 md:grid-cols-2">
@@ -307,9 +401,9 @@ function SellPage() {
     {analysis && <div className="grid gap-6 lg:grid-cols-[1.15fr_.85fr]">
       <div className="space-y-6">
         <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-widest text-brand-600">AI item analysis</p><h2 className="mt-2 text-2xl font-extrabold">{analysis.itemName}</h2></div>{demoMode && <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide text-amber-700 shadow-sm"><Zap size={15} fill="currentColor" /> Demo Mode · Fallback AI</span>}</div>
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-widest text-brand-600">Item identified</p><h2 className="mt-2 text-2xl font-extrabold">{analysis.itemName}</h2></div>{demoMode ? <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide text-amber-700 shadow-sm"><Zap size={15} fill="currentColor" /> AI Demo Mode</span> : <span className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide text-brand-700"><Sparkles size={15} /> AI Analysis</span>}</div>
           <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">{[['Category', analysis.category], ['Condition', analysis.condition], ['Confidence', `${analysis.conditionConfidence}%`]].map(([label, value]) => <div key={label} className="rounded-2xl bg-stone-50 p-4"><p className="text-xs text-stone-500">{label}</p><p className="mt-1 font-bold">{value}</p></div>)}</div>
-          <div className="mt-6 rounded-2xl border border-brand-200 bg-brand-50 p-5"><p className="text-sm font-semibold text-brand-700">Fair price estimate</p><p className="mt-2 text-2xl font-black tracking-tight text-brand-700">{formatMMK(analysis.suggestedPriceMin).replace(' MMK', '')} – {formatMMK(analysis.suggestedPriceMax)}</p><p className="mt-2 text-xs leading-relaxed text-brand-700/70">Based on item type, visible condition and prototype market assumptions. This is an estimate, not real-time market data.</p></div>
+          <div className="mt-6 rounded-2xl border border-brand-200 bg-brand-50 p-5"><p className="text-sm font-semibold text-brand-700">Estimated price — not real-time market data</p><p className="mt-2 text-2xl font-black tracking-tight text-brand-700">{formatMMK(analysis.suggestedPriceMin).replace(' MMK', '')} – {formatMMK(analysis.suggestedPriceMax)}</p><p className="mt-2 text-xs leading-relaxed text-brand-700/70">Based on item type, visible condition and prototype assumptions. Buyer and seller verification is recommended.</p></div>
         </section>
         <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
           <p className="text-xs font-bold uppercase tracking-widest text-brand-600">AI generated listing</p><h2 className="mt-2 text-2xl font-extrabold">Make it yours</h2>
@@ -320,9 +414,9 @@ function SellPage() {
       </div>
       <aside className="space-y-6">
         <div className="overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-sm"><div className="aspect-[4/3] bg-stone-100"><img src={image} alt="Listing preview" className="h-full w-full object-contain" /></div><div className="p-5"><p className="text-xs text-stone-500">Your listing preview</p><p className="mt-1 font-bold">{analysis.title}</p><p className="mt-2 text-lg font-black">{formatMMK(price)}</p></div></div>
-        <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm"><div className="flex items-center justify-between"><span className="grid h-11 w-11 place-items-center rounded-xl bg-blue-50 text-blue-700"><ShieldCheck size={23} /></span><span className="text-3xl font-black">{analysis.conditionConfidence}<span className="text-base text-stone-400">/100</span></span></div><h3 className="mt-4 font-extrabold">Trust & safety</h3><p className="mt-1 text-xs text-stone-500">AI confidence from visible details</p><ul className="mt-5 space-y-3">{analysis.trustObservations.map((item, index) => <li key={item} className="flex gap-3 text-sm leading-relaxed text-stone-600">{index === analysis.trustObservations.length - 1 ? <ShieldCheck size={17} className="mt-0.5 shrink-0 text-amber-600" /> : <CircleCheck size={17} className="mt-0.5 shrink-0 text-brand-600" />}{item}</li>)}</ul></section>
-        <section className="rounded-3xl bg-[#173f30] p-6 text-white shadow-sm"><Leaf className="text-brand-200" size={25} /><p className="mt-5 text-xs font-bold uppercase tracking-widest text-brand-200">Circular impact estimate</p><p className="mt-2 text-3xl font-black">{analysis.estimatedWasteAvoidedKg} kg</p><p className="text-sm text-brand-100">potential waste avoided</p><p className="mt-4 text-sm leading-relaxed text-white/70">{analysis.environmentalImpact}</p></section>
-        <Button onClick={publish} disabled={!analysis.title.trim() || price <= 0} className="w-full py-4 text-base"><Upload size={19} /> Publish Listing</Button>
+        <TrustPassport analysis={analysis} sellerNoteProvided={Boolean(note.trim())} trustScore={calculateTrustScore({ image: true, analysis: true, description: Boolean(analysis.description.trim()), sellerNote: Boolean(note.trim()), conditionConfidence: analysis.conditionConfidence })} />
+        <section className="rounded-3xl bg-[#173f30] p-6 text-white shadow-sm"><Leaf className="text-brand-200" size={25} /><p className="mt-5 text-xs font-bold uppercase tracking-widest text-brand-200">Estimated environmental impact</p><p className="mt-2 text-3xl font-black">{estimateWasteKg(analysis.category)} kg</p><p className="text-sm text-brand-100">estimated waste avoided</p><p className="mt-4 text-sm leading-relaxed text-white/70">{analysis.environmentalImpact}</p><p className="mt-4 text-[11px] text-white/45" title="Prototype estimate based on typical item category weight. Actual impact may vary.">Prototype category-weight estimate. Actual impact may vary.</p></section>
+        <Button onClick={publish} disabled={isPublishing || !image || !analysis.title.trim() || !analysis.description.trim() || price <= 0 || !analysis.condition} className="w-full py-4 text-base"><Upload size={19} /> {isPublishing ? 'Publishing…' : 'Publish Listing'}</Button>
         <button onClick={() => setAnalysis(null)} className="w-full text-center text-sm font-medium text-stone-500 hover:text-ink">Start over with another photo</button>
       </aside>
     </div>}
@@ -335,6 +429,17 @@ function DetailPage() {
   const listing = [...readPublished(), ...demoListings].find(item => item.id === id)
   const [saved, setSaved] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [interestSent, setInterestSent] = useState(false)
+  const submitInterest = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    void sendListingEvent({
+      event: 'buyer_interest', listingId: listing?.id, listingTitle: listing?.title,
+      buyerName: form.get('buyerName'), contact: form.get('contact'), message: form.get('message'),
+      createdAt: new Date().toISOString(),
+    })
+    setInterestSent(true)
+  }
   if (!listing) return <main className="mx-auto max-w-2xl px-5 py-24 text-center"><ShoppingBag className="mx-auto text-stone-300" size={48} /><h1 className="mt-5 text-3xl font-black">Listing not found</h1><p className="mt-3 text-stone-500">This item may no longer be available.</p><Link to="/"><Button className="mt-7">Back to marketplace</Button></Link></main>
   return <main className="mx-auto max-w-7xl px-5 py-8 sm:px-8 sm:py-12">
     {locationState?.justPublished && <div className="mb-7 flex items-start gap-3 rounded-2xl border border-brand-200 bg-brand-50 p-4 text-brand-700"><CircleCheck className="mt-0.5 shrink-0" size={20} /><div><p className="font-bold">Your listing is live!</p><p className="mt-0.5 text-sm opacity-80">It now appears in the ReLoop marketplace.</p></div></div>}
@@ -343,25 +448,36 @@ function DetailPage() {
       <section><div className="aspect-[4/3] overflow-hidden rounded-3xl bg-stone-100 shadow-sm"><ItemVisual listing={listing} /></div><div className="mt-8 hidden space-y-6 lg:block"><DescriptionBlocks listing={listing} /></div></section>
       <aside>
         <div className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
-          <div className="flex flex-wrap items-center gap-2"><span className="rounded-md bg-brand-50 px-2.5 py-1 text-xs font-bold text-brand-700">{listing.condition}</span>{listing.aiVerified && <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700"><BadgeCheck size={14} /> AI VERIFIED</span>}</div>
+          <div className="flex flex-wrap items-center gap-2"><span className="rounded-md bg-brand-50 px-2.5 py-1 text-xs font-bold text-brand-700">{listing.condition}</span>{listing.aiVerified && <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700"><BadgeCheck size={14} /> AI ASSESSED</span>}</div>
           <h1 className="mt-5 text-3xl font-black leading-tight tracking-[-.025em]">{listing.title}</h1><p className="mt-4 text-3xl font-black text-brand-700">{formatMMK(listing.price)}</p><p className="mt-4 flex items-center gap-1.5 text-sm text-stone-500"><MapPin size={16} /> {listing.location}</p>
           <div className="my-7 border-t border-stone-100" />
           <div className="flex items-center gap-4"><span className="grid h-12 w-12 place-items-center rounded-full bg-[#e7d4bb] font-bold text-amber-900">{listing.seller.slice(0, 1)}</span><div><p className="font-bold">{listing.seller}</p><p className="text-xs text-stone-500">{listing.sellerSince}</p></div><div className="ml-auto text-right"><p className="flex items-center gap-1 font-bold text-brand-700"><ShieldCheck size={17} /> {listing.trustScore}%</p><p className="text-[11px] text-stone-400">Trust score</p></div></div>
           <div className="mt-7 grid grid-cols-[1fr_auto] gap-3"><Button onClick={() => setDialogOpen(true)} className="py-4 text-base">I'm Interested <ArrowRight size={18} /></Button><Button aria-label="Save listing" variant="secondary" onClick={() => setSaved(v => !v)} className={cn('px-4', saved && 'border-rose-200 bg-rose-50 text-rose-600')}><Heart size={20} fill={saved ? 'currentColor' : 'none'} /></Button></div>
           <p className="mt-4 text-center text-xs text-stone-400">Meet safely in a public place. Inspect before paying.</p>
         </div>
-        <div className="mt-5 rounded-3xl bg-[#173f30] p-6 text-white"><div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-white/10 text-brand-200"><Leaf size={22} /></span><div><p className="text-xs text-brand-200">Estimated circular impact</p><p className="text-xl font-black">{listing.estimatedWasteAvoidedKg} kg waste avoided</p></div></div><p className="mt-4 text-sm leading-relaxed text-white/65">{listing.environmentalImpact}</p><p className="mt-4 text-[11px] text-white/40">Environmental figures are illustrative estimates.</p></div>
+        <div className="mt-5 rounded-3xl bg-[#173f30] p-6 text-white"><div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-white/10 text-brand-200"><Leaf size={22} /></span><div><p className="text-xs text-brand-200">Estimated environmental impact</p><p className="text-xl font-black">{listing.estimatedWasteAvoidedKg} kg waste avoided</p></div></div><p className="mt-4 text-sm leading-relaxed text-white/65">{listing.environmentalImpact}</p><p className="mt-4 text-[11px] text-white/40">Prototype estimate based on typical item category weight. Actual impact may vary.</p></div>
         <div className="mt-8 space-y-6 lg:hidden"><DescriptionBlocks listing={listing} /></div>
       </aside>
     </div>
-    <Dialog.Root open={dialogOpen} onOpenChange={setDialogOpen}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" /><Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl bg-white p-8 text-center shadow-2xl"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-brand-50 text-brand-600"><CircleCheck size={32} /></span><Dialog.Title className="mt-5 text-2xl font-black">Interest sent to seller.</Dialog.Title><Dialog.Description className="mt-3 leading-relaxed text-stone-500">For this prototype, we’ve let {listing.seller} know you’re interested. No real message was sent.</Dialog.Description><Button onClick={() => setDialogOpen(false)} className="mt-7 w-full">Done</Button></Dialog.Content></Dialog.Portal></Dialog.Root>
+    <Dialog.Root open={dialogOpen} onOpenChange={open => { setDialogOpen(open); if (!open) setInterestSent(false) }}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" /><Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[calc(100vh-2rem)] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-auto rounded-3xl bg-white p-6 shadow-2xl sm:p-8">
+      <Dialog.Close aria-label="Close interest form" className="absolute right-5 top-5 grid h-9 w-9 place-items-center rounded-full bg-stone-100 text-stone-500 hover:bg-stone-200"><X size={17} /></Dialog.Close>
+      {interestSent ? <div className="py-4 text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-brand-50 text-brand-600"><CircleCheck size={32} /></span><Dialog.Title className="mt-5 text-2xl font-black">Interest sent.</Dialog.Title><Dialog.Description className="mt-3 leading-relaxed text-stone-500">Your interest is saved for this prototype. No real message was sent.</Dialog.Description><Button onClick={() => setDialogOpen(false)} className="mt-7 w-full">Done</Button></div> :
+        <><Dialog.Title className="pr-10 text-2xl font-black">Interested in this item?</Dialog.Title><Dialog.Description className="mt-2 text-sm leading-relaxed text-stone-500">Share a simple way for the seller to respond. This stays local in the prototype.</Dialog.Description>
+          <form onSubmit={submitInterest} className="mt-6 space-y-4">
+            <label className="block text-sm font-bold">Your name<input name="buyerName" required autoFocus placeholder="Aye Aye" className="mt-2 w-full rounded-xl border border-stone-200 p-3 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /></label>
+            <label className="block text-sm font-bold">Contact method<input name="contact" required placeholder="Phone, Viber, or email" className="mt-2 w-full rounded-xl border border-stone-200 p-3 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /></label>
+            <label className="block text-sm font-bold">Message<textarea name="message" required defaultValue="Hi, is this still available?" rows={3} className="mt-2 w-full resize-none rounded-xl border border-stone-200 p-3 font-normal outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /></label>
+            <Button type="submit" className="w-full py-3.5">Send interest <ArrowRight size={17} /></Button>
+          </form>
+        </>}
+    </Dialog.Content></Dialog.Portal></Dialog.Root>
   </main>
 }
 
 function DescriptionBlocks({ listing }: { listing: Listing }) {
   return <>
     <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8"><h2 className="text-xl font-extrabold">About this item</h2><p className="mt-4 leading-relaxed text-stone-600">{listing.description}</p></section>
-    <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-blue-700"><Sparkles size={20} /></span><div><h2 className="font-extrabold">AI condition analysis</h2><p className="text-xs text-stone-500">{listing.conditionConfidence}% visual confidence</p></div></div><ul className="mt-5 grid gap-3 sm:grid-cols-2">{listing.trustObservations.map(item => <li key={item} className="flex gap-2 rounded-xl bg-stone-50 p-3 text-sm leading-relaxed text-stone-600"><CircleCheck size={17} className="mt-0.5 shrink-0 text-brand-600" /> {item}</li>)}</ul><p className="mt-4 text-xs text-stone-400">AI observations are guidance only. Always inspect the item in person.</p></section>
+    <TrustPassport analysis={listing} trustScore={listing.trustScore} sellerNoteProvided={Boolean(listing.sellerNote)} />
   </>
 }
 
