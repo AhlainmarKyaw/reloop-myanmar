@@ -481,11 +481,24 @@ function DetailPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [interestSent, setInterestSent] = useState(false)
   const [interestForm, setInterestForm] = useState({ buyerName: '', contact: '', message: 'Hi, is this still available?' })
+  const [interestError, setInterestError] = useState('')
   const submitInterest = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const submitted = {
+      buyerName: String(form.get('buyerName') || interestForm.buyerName).trim(),
+      contact: String(form.get('contact') || interestForm.contact).trim(),
+      message: String(form.get('message') || interestForm.message).trim(),
+    }
+    if (!submitted.buyerName || !submitted.contact || !submitted.message) {
+      setInterestError('Add your name, contact method, and a short message.')
+      return
+    }
+    setInterestForm(submitted)
+    setInterestError('')
     void sendListingEvent({
       event: 'buyer_interest', listingId: listing?.id, listingTitle: listing?.title,
-      buyerName: interestForm.buyerName, contact: interestForm.contact, message: interestForm.message,
+      buyerName: submitted.buyerName, contact: submitted.contact, message: submitted.message,
       createdAt: new Date().toISOString(),
     })
     setInterestSent(true)
@@ -509,14 +522,15 @@ function DetailPage() {
         <div className="mt-8 space-y-6 lg:hidden"><DescriptionBlocks listing={listing} /></div>
       </aside>
     </div>
-    <Dialog.Root open={dialogOpen} onOpenChange={open => { setDialogOpen(open); if (!open) setInterestSent(false) }}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" /><Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[calc(100vh-2rem)] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-auto rounded-3xl bg-white p-6 shadow-2xl sm:p-8">
+    <Dialog.Root open={dialogOpen} onOpenChange={open => { setDialogOpen(open); if (!open) { setInterestSent(false); setInterestError('') } }}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" /><Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[calc(100vh-2rem)] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-auto rounded-3xl bg-white p-6 shadow-2xl sm:p-8">
       <Dialog.Close aria-label="Close interest form" className="absolute right-5 top-5 grid h-9 w-9 place-items-center rounded-full bg-stone-100 text-stone-500 hover:bg-stone-200"><X size={17} /></Dialog.Close>
       {interestSent ? <div className="py-4 text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-brand-50 text-brand-600"><CircleCheck size={32} /></span><Dialog.Title className="mt-5 text-2xl font-black">Interest sent.</Dialog.Title><Dialog.Description className="mt-3 leading-relaxed text-stone-500">Your interest is saved for this prototype. No real message was sent.</Dialog.Description><Button onClick={() => setDialogOpen(false)} className="mt-7 w-full">Done</Button></div> :
         <><Dialog.Title className="pr-10 text-2xl font-black">Interested in this item?</Dialog.Title><Dialog.Description className="mt-2 text-sm leading-relaxed text-stone-500">Share a simple way for the seller to respond. This stays local in the prototype.</Dialog.Description>
-          <form onSubmit={submitInterest} className="mt-6 space-y-4">
-            <label className="block text-sm font-bold">Your name<input name="buyerName" required autoFocus value={interestForm.buyerName} onChange={event => setInterestForm(current => ({ ...current, buyerName: event.target.value }))} placeholder="Aye Aye" className="mt-2 w-full rounded-xl border border-stone-200 p-3 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /></label>
-            <label className="block text-sm font-bold">Contact method<input name="contact" required value={interestForm.contact} onChange={event => setInterestForm(current => ({ ...current, contact: event.target.value }))} placeholder="Phone, Viber username, or email" className="mt-2 w-full rounded-xl border border-stone-200 p-3 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /></label>
-            <label className="block text-sm font-bold">Message<textarea name="message" required value={interestForm.message} onChange={event => setInterestForm(current => ({ ...current, message: event.target.value }))} rows={3} className="mt-2 w-full resize-none rounded-xl border border-stone-200 p-3 font-normal outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /></label>
+          <form onSubmit={submitInterest} noValidate className="mt-6 space-y-4">
+            <label className="block text-sm font-bold">Your name<input name="buyerName" autoFocus value={interestForm.buyerName} onChange={event => setInterestForm(current => ({ ...current, buyerName: event.target.value }))} placeholder="Aye Aye" className="mt-2 w-full rounded-xl border border-stone-200 p-3 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /></label>
+            <label className="block text-sm font-bold">Contact method<input name="contact" value={interestForm.contact} onChange={event => setInterestForm(current => ({ ...current, contact: event.target.value }))} placeholder="Phone, Viber username, or email" className="mt-2 w-full rounded-xl border border-stone-200 p-3 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /></label>
+            <label className="block text-sm font-bold">Message<textarea name="message" value={interestForm.message} onChange={event => setInterestForm(current => ({ ...current, message: event.target.value }))} rows={3} className="mt-2 w-full resize-none rounded-xl border border-stone-200 p-3 font-normal outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /></label>
+            {interestError && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{interestError}</p>}
             <Button type="submit" className="w-full py-3.5">Send interest <ArrowRight size={17} /></Button>
           </form>
         </>}
