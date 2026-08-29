@@ -64,9 +64,30 @@ The serverless function uses JSON Schema output, bounds numeric values, limits t
 
 Default prepared model: `gpt-4o-mini`. Set `AI_MODEL` to another image-capable model that supports structured JSON output if needed.
 
+```text
+Browser → Netlify Function → OpenAI multimodal model
+        → Structured analysis → Validation → ReLoop UI
+```
+
 ### AI Demo Mode
 
 `demoAnalyzeItem()` remains a deterministic fallback. It activates when no key exists, the provider or network fails, the request times out, parsing fails, or the response is invalid. The interface clearly shows **AI Demo Mode** and preserves the full analyze → edit → publish → interest journey. It is never presented as live AI.
+
+```text
+Browser → Netlify Function or provider error → Deterministic demo fallback
+        → ReLoop remains usable
+```
+
+## Data & AI Transparency
+
+- Uploaded JPG, PNG, and WEBP photographs are resized in the browser and sent to the configured OpenAI multimodal model through a server-side Netlify Function.
+- Product and possible-model identification is probabilistic. Unknown brands or models are returned as `Unknown`.
+- Condition analysis covers visible exterior condition only. A photograph cannot verify authenticity, ownership, internal condition, battery health, or functionality.
+- MMK pricing is AI-assisted guidance based on general product knowledge, possible identity, visible condition, and seller notes.
+- **No live market pricing source or curated reference dataset is integrated.** The UI therefore identifies the price source as “AI estimate” and never shows High confidence.
+- Sample marketplace listings and the Try Demo Item asset are demonstration content.
+- Trust Score is calculated deterministically in application code; OpenAI does not generate it.
+- Waste-avoidance and environmental figures are deterministic category-based prototype estimates, not scientific lifecycle assessments.
 
 ## AI Trust Passport
 
@@ -176,7 +197,7 @@ N8N_WEBHOOK_URL=
 - `AI_MODEL`: optional; defaults to `gpt-4o-mini`
 - `N8N_WEBHOOK_URL`: optional; core functionality works without it
 
-Never commit a real `.env` file or API key.
+Never commit a real `.env` file or API key. After changing a Netlify environment variable, trigger a new deployment so the Functions runtime receives the updated value.
 
 ## Local development
 
@@ -203,7 +224,7 @@ Connect the repository to Netlify with:
 
 `netlify.toml` contains API rewrites and a final SPA fallback to `/index.html`, so direct refreshes of `/`, `/sell`, and `/listing/:id` resolve correctly.
 
-Add `AI_API_KEY` and optionally `AI_MODEL` for real analysis. Add `N8N_WEBHOOK_URL` only after creating an n8n webhook. The app remains fully demonstrable without any environment variables.
+In Netlify, open **Project configuration → Environment variables**, add `AI_API_KEY` and optionally `AI_MODEL`, then trigger a new deployment. Add `N8N_WEBHOOK_URL` only after creating an n8n webhook. The app remains fully demonstrable without any environment variables.
 
 ## Hackathon scope and prototype limitations
 

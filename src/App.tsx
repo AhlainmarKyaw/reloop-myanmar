@@ -12,6 +12,8 @@ type Analysis = {
   itemName: string; category: string; condition: string; conditionConfidence: number
   suggestedPriceMin: number; suggestedPriceMax: number; title: string; description: string
   trustObservations: string[]; buyerChecks?: string[]; environmentalImpact: string; estimatedWasteAvoidedKg: number
+  brand?: string; possibleModel?: string; modelConfidence?: number; visibleObservations?: string[]
+  possibleDefects?: string[]; pricingBasis?: string; analysisSource?: 'openai' | 'demo'
 }
 type Listing = Analysis & {
   id: string; price: number; location: string; seller: string; sellerSince: string
@@ -23,7 +25,7 @@ const demoListings: Listing[] = [
   {
     id: 'iphone-12', itemName: 'Apple iPhone 12', category: 'Phones', condition: 'Very Good',
     conditionConfidence: 94, suggestedPriceMin: 610000, suggestedPriceMax: 680000,
-    title: 'iPhone 12 128GB — Excellent Battery', price: 645000, location: 'Yangon',
+    title: 'iPhone 12 128GB — Clean Exterior', price: 645000, location: 'Yangon',
     seller: 'Moe Thuzar', sellerSince: 'Member since 2024', trustScore: 96, aiVerified: true,
     description: 'Carefully used iPhone 12 with 128GB storage. Screen and cameras are in excellent condition. Includes original box and charging cable.',
     trustObservations: ['Screen appears free of cracks', 'Camera lenses look intact', 'Ask seller to verify battery health before purchase'],
@@ -33,9 +35,9 @@ const demoListings: Listing[] = [
   {
     id: 'asus-laptop', itemName: 'ASUS VivoBook 15', category: 'Computers', condition: 'Good',
     conditionConfidence: 89, suggestedPriceMin: 750000, suggestedPriceMax: 840000,
-    title: 'ASUS VivoBook 15 — Work & Study Ready', price: 790000, location: 'Mandalay',
+    title: 'ASUS VivoBook 15 — Good Visible Condition', price: 790000, location: 'Mandalay',
     seller: 'Aung Kyaw', sellerSince: 'Member since 2023', trustScore: 91, aiVerified: true,
-    description: 'Reliable VivoBook with a bright 15-inch display, suitable for everyday office work, study, and browsing.',
+    description: 'Sample VivoBook listing with a clean exterior and light visible keyboard wear. Functionality and battery runtime cannot be verified from the image.',
     trustObservations: ['Keyboard shows light signs of use', 'Display appears clear', 'Confirm charger and battery runtime at meetup'],
     environmentalImpact: 'Reusing a laptop keeps valuable metals and electronics in circulation.',
     estimatedWasteAvoidedKg: 2.1, icon: 'laptop', color: 'from-blue-700 to-sky-400',
@@ -43,9 +45,9 @@ const demoListings: Listing[] = [
   {
     id: 'sony-headphones', itemName: 'Sony Headphones', category: 'Audio', condition: 'Like New',
     conditionConfidence: 96, suggestedPriceMin: 250000, suggestedPriceMax: 300000,
-    title: 'Sony WH-1000XM4 Noise Cancelling', price: 280000, location: 'Yangon',
+    title: 'Sony WH-1000XM4 — Clean Exterior', price: 280000, location: 'Yangon',
     seller: 'Nandar Win', sellerSince: 'Member since 2025', trustScore: 98, aiVerified: true,
-    description: 'Premium wireless headphones in near-new condition with carrying case and charging cable.',
+    description: 'Sample wireless-headphone listing showing a clean exterior, carrying case, and charging cable. Audio and Bluetooth functionality are not verified.',
     trustObservations: ['Ear cushions appear clean', 'Headband looks undamaged', 'Test Bluetooth and audio at meetup'],
     environmentalImpact: 'Keeping audio equipment in use reduces small electronic waste.',
     estimatedWasteAvoidedKg: 0.25, icon: 'headphones', color: 'from-stone-800 to-stone-400',
@@ -65,7 +67,7 @@ const demoListings: Listing[] = [
     conditionConfidence: 88, suggestedPriceMin: 220000, suggestedPriceMax: 275000,
     title: 'Lightweight City Bicycle — 7 Speed', price: 245000, location: 'Mandalay',
     seller: 'Ko Min', sellerSince: 'Member since 2024', trustScore: 90, aiVerified: true,
-    description: 'Comfortable seven-speed bicycle, recently serviced and ready for commuting or weekend rides.',
+    description: 'Sample seven-speed bicycle listing with visible frame, tyres, and handlebars. Brakes, gears, and service history require buyer verification.',
     trustObservations: ['Frame shows no visible dents', 'Tyres appear serviceable', 'Test brakes and gears before purchase'],
     environmentalImpact: 'A reused bicycle supports low-carbon travel while avoiding material waste.',
     estimatedWasteAvoidedKg: 14.2, icon: 'bike', color: 'from-emerald-800 to-teal-300',
@@ -73,9 +75,9 @@ const demoListings: Listing[] = [
   {
     id: 'rice-cooker', itemName: 'Panasonic Rice Cooker', category: 'Home Appliances', condition: 'Very Good',
     conditionConfidence: 93, suggestedPriceMin: 75000, suggestedPriceMax: 98000,
-    title: 'Panasonic 1.8L Rice Cooker', price: 85000, location: 'Yangon',
+    title: 'Panasonic 1.8L Rice Cooker — Clean Exterior', price: 85000, location: 'Yangon',
     seller: 'May Zin', sellerSince: 'Member since 2023', trustScore: 95, aiVerified: true,
-    description: 'Clean and dependable 1.8L rice cooker. Heating and keep-warm functions work well.',
+    description: 'Sample 1.8L rice cooker listing with a clean visible exterior. Heating and keep-warm functionality cannot be verified from an image.',
     trustObservations: ['Inner pot has light signs of use', 'Power cable appears intact', 'Request a power-on test at meetup'],
     environmentalImpact: 'Extending appliance life keeps mixed electronics and metal out of waste streams.',
     estimatedWasteAvoidedKg: 3.4, icon: 'cooker', color: 'from-rose-700 to-orange-300',
@@ -113,20 +115,28 @@ const readPublished = (): Listing[] => {
 function demoAnalyzeItem(note: string): Analysis {
   if (/bike|bicycle/i.test(note)) return {
     itemName: 'Urban Commuter Bicycle', category: 'Sports & Outdoors', condition: 'Good',
+    brand: 'Unknown', possibleModel: 'Unknown', modelConfidence: 25, analysisSource: 'demo',
     conditionConfidence: 90, suggestedPriceMin: 220000, suggestedPriceMax: 280000,
+    pricingBasis: 'Prototype AI estimate based on item type and visible condition. No live Myanmar marketplace pricing source was available.',
     title: 'Reliable Urban Bicycle — Ready to Ride',
     description: 'Well-kept commuter bicycle with a sturdy frame and comfortable setup. A practical choice for everyday travel around the city. Light cosmetic wear is consistent with normal use.',
     trustObservations: ['Frame appears straight with no obvious exterior cracks', 'Tyres appear to show usable tread', 'Visible condition suggests normal cosmetic wear'],
+    visibleObservations: ['Bicycle frame is visible in the provided demo image', 'Tyres and handlebars appear present'],
+    possibleDefects: ['Minor cosmetic wear may be present'],
     buyerChecks: ['Test brakes and gears before purchase', 'Confirm the frame size is suitable', 'Inspect the item before payment'],
     environmentalImpact: 'Keeping this bicycle in use avoids material waste and supports low-carbon transport.',
     estimatedWasteAvoidedKg: 14.2,
   }
   return {
     itemName: 'Smartphone (appears to be iPhone 12)', category: 'Phones & Tablets', condition: 'Very Good',
+    brand: 'Apple (seller-provided)', possibleModel: 'iPhone 12 (seller-provided)', modelConfidence: 75, analysisSource: 'demo',
     conditionConfidence: 94, suggestedPriceMin: 610000, suggestedPriceMax: 680000,
+    pricingBasis: 'Prototype AI estimate based on the seller note, item type, and visible condition. No live Myanmar marketplace pricing source was available.',
     title: 'iPhone 12 128GB — Clean & Well Cared For',
     description: 'The seller identifies this as an iPhone 12 with 128GB storage. Visible condition appears very good, with a clean screen and camera area in the provided image. Functionality and internal condition cannot be verified from a photo.',
     trustObservations: ['No obvious exterior screen cracks are visible', 'Camera area appears intact in the provided image', 'Light signs of normal use may be present'],
+    visibleObservations: ['Smartphone exterior is visible', 'No obvious exterior screen cracks are visible', 'Camera area appears intact'],
+    possibleDefects: ['Light cosmetic wear may be present'],
     buyerChecks: ['Test functionality and battery before purchase', 'Verify IMEI and iCloud status', 'Confirm the included box and cable'],
     environmentalImpact: 'Giving this phone a second life can keep valuable electronics in circulation and reduce demand for a newly manufactured device.',
     estimatedWasteAvoidedKg: 0.4,
@@ -134,10 +144,6 @@ function demoAnalyzeItem(note: string): Analysis {
 }
 
 async function analyzeItem(image: string, note: string): Promise<{ analysis: Analysis; demoMode: boolean }> {
-  if (import.meta.env.DEV) {
-    await new Promise(resolve => setTimeout(resolve, 2200))
-    return { analysis: demoAnalyzeItem(note), demoMode: true }
-  }
   try {
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 12000)
@@ -149,6 +155,8 @@ async function analyzeItem(image: string, note: string): Promise<{ analysis: Ana
     if (!response.ok) throw new Error('AI endpoint unavailable')
     const value = await response.json() as Partial<Analysis>
     if (!value.itemName || !value.category || !value.condition || !value.title || !value.description ||
+      !value.brand || !value.possibleModel || !value.pricingBasis || value.analysisSource !== 'openai' ||
+      !Array.isArray(value.visibleObservations) || !Array.isArray(value.possibleDefects) ||
       !Array.isArray(value.trustObservations) || !Array.isArray(value.buyerChecks) ||
       !Number.isFinite(value.suggestedPriceMin) || !Number.isFinite(value.suggestedPriceMax)) throw new Error('Invalid AI response')
     const analysis = value as Analysis
@@ -159,6 +167,42 @@ async function analyzeItem(image: string, note: string): Promise<{ analysis: Ana
     await new Promise(resolve => setTimeout(resolve, 1200))
     return { analysis: demoAnalyzeItem(note), demoMode: true }
   }
+}
+
+const getPricingConfidence = (analysis: Analysis) => {
+  const identifiedEvidence = analysis.brand && analysis.brand !== 'Unknown' &&
+    analysis.possibleModel && analysis.possibleModel !== 'Unknown' &&
+    (analysis.modelConfidence || 0) >= 70
+  return identifiedEvidence && analysis.conditionConfidence >= 70 ? 'Medium' : 'Low'
+}
+
+const fileToDataUrl = (file: Blob) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader()
+  reader.onload = () => resolve(String(reader.result))
+  reader.onerror = () => reject(new Error('Unable to read image'))
+  reader.readAsDataURL(file)
+})
+
+async function prepareImage(file: File, allowDemoSvg = false) {
+  const supported = ['image/jpeg', 'image/png', 'image/webp']
+  if (!supported.includes(file.type) && !(allowDemoSvg && file.type === 'image/svg+xml')) {
+    throw new Error('Please choose a JPG, PNG, or WEBP image.')
+  }
+  if (file.size > 10 * 1024 * 1024) throw new Error('Please choose an image under 10 MB.')
+  const source = await fileToDataUrl(file)
+  const image = new window.Image()
+  image.src = source
+  await image.decode()
+  const scale = Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Unable to prepare image.')
+  context.fillStyle = '#f5f5f4'
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  context.drawImage(image, 0, 0, canvas.width, canvas.height)
+  return canvas.toDataURL('image/jpeg', 0.84)
 }
 
 async function sendListingEvent(payload: Record<string, unknown>) {
@@ -237,7 +281,7 @@ function ListingCard({ listing }: { listing: Listing }) {
     <div className="relative aspect-[4/3] overflow-hidden">
       <ItemVisual listing={listing} className="transition duration-500 group-hover:scale-105" />
       <button aria-label="Save listing" onClick={event => { event.preventDefault(); event.currentTarget.classList.toggle('text-rose-500') }} className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-stone-600 shadow-sm backdrop-blur transition hover:scale-105"><Heart size={17} /></button>
-      {listing.aiVerified && <span className="absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold text-brand-700 shadow-sm backdrop-blur"><BadgeCheck size={14} /> AI ASSESSED</span>}
+      {listing.aiVerified && <span className="absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold text-brand-700 shadow-sm backdrop-blur"><BadgeCheck size={14} /> {listing.publishedAt ? (listing.analysisSource === 'openai' ? 'AI ASSESSED' : 'DEMO MODE') : 'SAMPLE LISTING'}</span>}
     </div>
     <div className="p-4">
       <div className="mb-2 flex items-center justify-between gap-3 text-xs"><span className="rounded-md bg-brand-50 px-2 py-1 font-semibold text-brand-700">{listing.condition}</span><span className="flex items-center gap-1 text-stone-500"><MapPin size={13} /> {listing.location}</span></div>
@@ -296,19 +340,19 @@ const analysisSteps = ['Looking at your item…', 'Checking visible condition…
 
 function TrustPassport({ analysis, trustScore, sellerNoteProvided }: { analysis: Analysis; trustScore: number; sellerNoteProvided: boolean }) {
   const signals = [
-    ['Image analyzed', true],
+    [analysis.analysisSource === 'openai' ? 'Photo analyzed with AI' : 'Photo assessed in Demo Mode', true],
     ['Visible condition reviewed', true],
     ['Listing information completed', Boolean(analysis.title && analysis.description)],
     ['Seller provided additional information', sellerNoteProvided],
   ] as const
   return <section className="overflow-hidden rounded-3xl border border-blue-200 bg-white shadow-sm">
     <div className="bg-blue-50 p-6">
-      <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-extrabold uppercase tracking-[.16em] text-blue-700">AI Trust Passport</p><h3 className="mt-2 text-lg font-extrabold">AI-assisted assessment</h3></div><div className="text-right"><p className="text-3xl font-black text-blue-800">{trustScore}<span className="text-base text-blue-400"> / 100</span></p><p className="text-[11px] font-semibold text-blue-600">Trust signals</p></div></div>
+      <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-extrabold uppercase tracking-[.16em] text-blue-700">AI Trust Passport</p><h3 className="mt-2 text-lg font-extrabold">{analysis.analysisSource === 'openai' ? 'AI-assisted assessment' : 'Demo assessment'}</h3></div><div className="text-right"><p className="text-3xl font-black text-blue-800">{trustScore}<span className="text-base text-blue-400"> / 100</span></p><p className="text-[11px] font-semibold text-blue-600">Trust signals</p></div></div>
       <div className="mt-5 grid gap-2 sm:grid-cols-2">{signals.map(([label, active]) => <div key={label} className={cn('flex items-center gap-2 text-xs font-semibold', active ? 'text-blue-800' : 'text-stone-400')}><span className={cn('grid h-5 w-5 place-items-center rounded-full', active ? 'bg-blue-700 text-white' : 'bg-stone-200')}><Check size={12} /></span>{label}</div>)}</div>
-      <details className="mt-5 text-xs text-blue-700"><summary className="cursor-pointer font-bold focus:outline-none focus:ring-2 focus:ring-blue-300">How is this calculated?</summary><p className="mt-2 leading-relaxed text-blue-700/75">Image +30, AI analysis +25, completed description +15, seller note +10, and condition confidence up to +20. It does not guarantee honesty, authenticity, ownership, safety, or functionality.</p></details>
+      <details className="mt-5 text-xs text-blue-700"><summary className="cursor-pointer font-bold focus:outline-none focus:ring-2 focus:ring-blue-300">How is this calculated?</summary><p className="mt-2 leading-relaxed text-blue-700/75">Image +30, {analysis.analysisSource === 'openai' ? 'AI analysis' : 'structured demo assessment'} +25, completed description +15, seller note +10, and condition confidence up to +20. It does not guarantee honesty, authenticity, ownership, safety, or functionality.</p></details>
     </div>
     <div className="grid gap-6 p-6 sm:grid-cols-2">
-      <div><p className="text-sm font-extrabold">AI visible observations</p><ul className="mt-3 space-y-3">{analysis.trustObservations.map(item => <li key={item} className="flex gap-2 text-sm leading-relaxed text-stone-600"><CircleCheck size={16} className="mt-0.5 shrink-0 text-brand-600" />{item}</li>)}</ul></div>
+      <div><p className="text-sm font-extrabold">AI visible observations</p><ul className="mt-3 space-y-3">{(analysis.visibleObservations || analysis.trustObservations).map(item => <li key={item} className="flex gap-2 text-sm leading-relaxed text-stone-600"><CircleCheck size={16} className="mt-0.5 shrink-0 text-brand-600" />{item}</li>)}</ul>{Boolean(analysis.possibleDefects?.length) && <div className="mt-4 rounded-xl bg-amber-50 p-3"><p className="text-xs font-bold text-amber-800">Possible visible wear</p><p className="mt-1 text-xs leading-relaxed text-amber-700">{analysis.possibleDefects?.join(' · ')}</p></div>}</div>
       <div><p className="text-sm font-extrabold">Buyer checks</p><ul className="mt-3 space-y-3">{(analysis.buyerChecks || defaultBuyerChecks).map(item => <li key={item} className="flex gap-2 text-sm leading-relaxed text-stone-600"><ShieldCheck size={16} className="mt-0.5 shrink-0 text-amber-600" />{item}</li>)}</ul></div>
     </div>
     <p className="border-t border-stone-100 px-6 py-3 text-[11px] text-stone-400">Buyer verification recommended. Assessment is based only on the provided image and seller note.</p>
@@ -334,18 +378,19 @@ function SellPage() {
     const timer = window.setInterval(() => setStep(current => Math.min(current + 1, analysisSteps.length - 1)), 650)
     return () => clearInterval(timer)
   }, [isAnalyzing])
-  const handleFile = (file?: File) => {
+  const handleFile = async (file?: File, allowDemoSvg = false) => {
     if (!file) return
-    if (!file.type.startsWith('image/')) { setError('Please choose an image file.'); return }
-    if (file.size > 4 * 1024 * 1024) { setError('Please choose an image under 4 MB.'); return }
-    const reader = new FileReader()
-    reader.onload = () => { setImage(String(reader.result)); setError(''); setAnalysis(null) }
-    reader.readAsDataURL(file)
+    try {
+      const prepared = await prepareImage(file, allowDemoSvg)
+      setImage(prepared); setError(''); setAnalysis(null)
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'Unable to prepare this image.')
+    }
   }
   const loadDemoItem = async () => {
     const response = await fetch('/demo-phone.svg')
     const blob = await response.blob()
-    handleFile(new File([blob], 'reloop-demo-phone.svg', { type: 'image/svg+xml' }))
+    await handleFile(new File([blob], 'reloop-demo-phone.svg', { type: 'image/svg+xml' }), true)
     setNote('Used for one year. Charger and original box included.')
   }
   const runAnalysis = async () => {
@@ -380,7 +425,7 @@ function SellPage() {
     <div className="mb-10 max-w-2xl"><div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-brand-600 text-white"><WandSparkles size={22} /></span><span className="font-bold text-brand-700">AI Sell Assistant</span></div><h1 className="mt-5 text-4xl font-black tracking-[-.035em] sm:text-5xl">{analysis ? 'Your listing, made smarter.' : 'Turn a photo into a great listing.'}</h1><p className="mt-4 text-stone-600">{analysis ? 'Review the AI suggestions, make any edits, and publish when you’re happy.' : 'Upload one clear photo. ReLoop AI helps identify, price, describe, and assess your item.'}</p></div>
     {!analysis && !isAnalyzing && <div className="grid gap-6 lg:grid-cols-[1.25fr_.75fr]">
       <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-7">
-        <div className="mb-5 flex items-center justify-between"><div><p className="font-bold">1. Add one item photo</p><p className="mt-1 text-sm text-stone-500">A clear, well-lit photo works best.</p></div><span className="rounded-full bg-stone-100 px-3 py-1 text-xs text-stone-500">JPG, PNG, WEBP · max 4 MB</span></div>
+        <div className="mb-5 flex items-center justify-between"><div><p className="font-bold">1. Add one item photo</p><p className="mt-1 text-sm text-stone-500">A clear, well-lit photo works best.</p></div><span className="rounded-full bg-stone-100 px-3 py-1 text-xs text-stone-500">JPG, PNG, WEBP · max 10 MB</span></div>
         <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={event => handleFile(event.target.files?.[0])} />
         {image ? <div className="group relative aspect-[16/10] overflow-hidden rounded-2xl bg-stone-100"><img src={image} alt="Item preview" className="h-full w-full object-contain" /><button onClick={() => setImage('')} className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white text-stone-700 shadow-lg"><X size={17} /></button></div> :
           <button onClick={() => fileRef.current?.click()} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); handleFile(event.dataTransfer.files[0]) }} className="group flex aspect-[16/10] w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-stone-300 bg-stone-50 transition hover:border-brand-400 hover:bg-brand-50/50"><span className="grid h-16 w-16 place-items-center rounded-2xl bg-white text-brand-600 shadow-md transition group-hover:-translate-y-1"><CloudUpload size={29} /></span><p className="mt-5 font-bold">Drop your photo here</p><p className="mt-1 text-sm text-stone-500">or click to browse</p></button>}
@@ -402,14 +447,19 @@ function SellPage() {
       <div className="space-y-6">
         <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
           <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-widest text-brand-600">Item identified</p><h2 className="mt-2 text-2xl font-extrabold">{analysis.itemName}</h2></div>{demoMode ? <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide text-amber-700 shadow-sm"><Zap size={15} fill="currentColor" /> AI Demo Mode</span> : <span className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide text-brand-700"><Sparkles size={15} /> AI Analysis</span>}</div>
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">{[['Category', analysis.category], ['Condition', analysis.condition], ['Confidence', `${analysis.conditionConfidence}%`]].map(([label, value]) => <div key={label} className="rounded-2xl bg-stone-50 p-4"><p className="text-xs text-stone-500">{label}</p><p className="mt-1 font-bold">{value}</p></div>)}</div>
-          <div className="mt-6 rounded-2xl border border-brand-200 bg-brand-50 p-5"><p className="text-sm font-semibold text-brand-700">Estimated price — not real-time market data</p><p className="mt-2 text-2xl font-black tracking-tight text-brand-700">{formatMMK(analysis.suggestedPriceMin).replace(' MMK', '')} – {formatMMK(analysis.suggestedPriceMax)}</p><p className="mt-2 text-xs leading-relaxed text-brand-700/70">Based on item type, visible condition and prototype assumptions. Buyer and seller verification is recommended.</p></div>
+          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">{[['Category', analysis.category], ['Brand', analysis.brand || 'Unknown'], ['Possible model', analysis.possibleModel || 'Unknown'], ['Visible condition', analysis.condition], ['Condition confidence', `${analysis.conditionConfidence}%`], ['Model confidence', `${analysis.modelConfidence || 0}%`]].map(([label, value]) => <div key={label} className="rounded-2xl bg-stone-50 p-4"><p className="text-xs text-stone-500">{label}</p><p className="mt-1 font-bold">{value}</p></div>)}</div>
+          <div className="mt-6 rounded-2xl border border-brand-200 bg-brand-50 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold text-brand-700">AI Estimated Price</p><span title="No live market references are connected. Confidence reflects identification and visible-condition evidence only." className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-brand-700">{getPricingConfidence(analysis)} confidence</span></div>
+            <p className="mt-2 text-2xl font-black tracking-tight text-brand-700">{formatMMK(analysis.suggestedPriceMin).replace(' MMK', '')} – {formatMMK(analysis.suggestedPriceMax)}</p>
+            <div className="mt-4 border-t border-brand-200 pt-3 text-xs leading-relaxed text-brand-800/70"><p><strong>Price source:</strong> AI estimate</p><p className="mt-1"><strong>Pricing basis:</strong> {analysis.pricingBasis || 'Prototype AI estimate based on item type and visible condition. No live Myanmar marketplace pricing source was available.'}</p></div>
+            <p className="mt-3 text-[11px] font-semibold text-brand-700">Estimated price — not real-time market data.</p>
+          </div>
         </section>
         <section className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
           <p className="text-xs font-bold uppercase tracking-widest text-brand-600">AI generated listing</p><h2 className="mt-2 text-2xl font-extrabold">Make it yours</h2>
           <label className="mt-6 block text-sm font-bold">Listing title</label><input value={analysis.title} onChange={event => setAnalysis({ ...analysis, title: event.target.value })} className="mt-2 w-full rounded-xl border border-stone-200 p-3.5 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" />
           <label className="mt-5 block text-sm font-bold">Description</label><textarea value={analysis.description} onChange={event => setAnalysis({ ...analysis, description: event.target.value })} rows={6} className="mt-2 w-full resize-none rounded-xl border border-stone-200 p-3.5 leading-relaxed outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" />
-          <label className="mt-5 block text-sm font-bold">Selling price</label><div className="relative mt-2"><input type="number" value={price} onChange={event => setPrice(Number(event.target.value))} className="w-full rounded-xl border border-stone-200 p-3.5 pr-20 font-bold outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /><span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-stone-400">MMK</span></div>
+          <label className="mt-5 block text-sm font-bold">Your selling price</label><p className="mt-1 text-xs text-stone-500">You control the final price. The AI range is guidance only.</p><div className="relative mt-2"><input type="number" value={price} onChange={event => setPrice(Number(event.target.value))} className="w-full rounded-xl border border-stone-200 p-3.5 pr-20 font-bold outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-50" /><span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-stone-400">MMK</span></div>
         </section>
       </div>
       <aside className="space-y-6">
@@ -448,7 +498,7 @@ function DetailPage() {
       <section><div className="aspect-[4/3] overflow-hidden rounded-3xl bg-stone-100 shadow-sm"><ItemVisual listing={listing} /></div><div className="mt-8 hidden space-y-6 lg:block"><DescriptionBlocks listing={listing} /></div></section>
       <aside>
         <div className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
-          <div className="flex flex-wrap items-center gap-2"><span className="rounded-md bg-brand-50 px-2.5 py-1 text-xs font-bold text-brand-700">{listing.condition}</span>{listing.aiVerified && <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700"><BadgeCheck size={14} /> AI ASSESSED</span>}</div>
+          <div className="flex flex-wrap items-center gap-2"><span className="rounded-md bg-brand-50 px-2.5 py-1 text-xs font-bold text-brand-700">{listing.condition}</span>{listing.aiVerified && <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700"><BadgeCheck size={14} /> {listing.publishedAt ? (listing.analysisSource === 'openai' ? 'AI ASSESSED' : 'DEMO MODE') : 'SAMPLE LISTING'}</span>}</div>
           <h1 className="mt-5 text-3xl font-black leading-tight tracking-[-.025em]">{listing.title}</h1><p className="mt-4 text-3xl font-black text-brand-700">{formatMMK(listing.price)}</p><p className="mt-4 flex items-center gap-1.5 text-sm text-stone-500"><MapPin size={16} /> {listing.location}</p>
           <div className="my-7 border-t border-stone-100" />
           <div className="flex items-center gap-4"><span className="grid h-12 w-12 place-items-center rounded-full bg-[#e7d4bb] font-bold text-amber-900">{listing.seller.slice(0, 1)}</span><div><p className="font-bold">{listing.seller}</p><p className="text-xs text-stone-500">{listing.sellerSince}</p></div><div className="ml-auto text-right"><p className="flex items-center gap-1 font-bold text-brand-700"><ShieldCheck size={17} /> {listing.trustScore}%</p><p className="text-[11px] text-stone-400">Trust score</p></div></div>
